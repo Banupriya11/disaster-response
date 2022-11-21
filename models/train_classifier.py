@@ -94,7 +94,7 @@ def build_model():
     ('clf',MultiOutputClassifier(AdaBoostClassifier()))
 ])
      
-    parameters = { 'vect__max_df': (0.75,0.85,1.0),
+    parameters = { 'vect__max_df': (0.75,0.85,0.95,1.0),
                     'clf__estimator__n_estimators': [5, 15],
                     'clf__estimator__min_samples_split': [2, 5]
                   }
