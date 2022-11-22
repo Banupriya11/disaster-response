@@ -28,12 +28,6 @@ def load_data(database_filepath):
     
     engine = create_engine('sqlite:///' + database_filepath)
     df = pd.read_sql_table('Message', engine)
-    
-#     engine = create_engine('sqlite:///' + database_filepath)
-#     table_name = os.path.basename(database_filepath).replace(".db","") + "_table"
-#     df = pd.read_sql_table(table_name,engine)
-#     engine = create_engine('sqlite:///Disaster.db')
-#     df = pd.read_sql_table('Message', engine)
     X = df ['message']
     Y = df.iloc[:,4:]
     Y = Y.astype(bool)
