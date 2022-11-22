@@ -7,7 +7,7 @@ from nltk.tokenize import word_tokenize
 
 from flask import Flask
 from flask import render_template, request, jsonify
-from plotly.graph_objs import Bar
+from plotly.graph_objs import Bar,Histogram
 from sklearn.externals import joblib
 from sqlalchemy import create_engine
 
@@ -43,6 +43,11 @@ def index():
     genre_counts = df.groupby('genre').count()['message']
     genre_names = list(genre_counts.index)
     
+    aid_rel1 = df[df['aid_related']==1].groupby('genre').count()['message']
+    aid_rel0 = df[df['aid_related']==0].groupby('genre').count()['message']
+    genre_names = list(aid_rel1.index)
+
+    
     # create visuals
     # TODO: Below is an example - modify to create your own visuals
     graphs = [
@@ -63,7 +68,46 @@ def index():
                     'title': "Genre"
                 }
             }
+        },
+         {
+            'data': [
+                Histogram(
+                    x=df['message'].apply(lambda x: len(x.split(' ')))
+                )
+            ],
+            'layout': {
+                'title': "Distribution of Word Length",
+                'yaxis': { 'title': 'Count' },
+                'xaxis': { 'title': 'Words in message' }
+            }
+        },
+         {
+            'data': [
+                Bar(
+                    x=genre_names,
+                    y=aid_rel1,
+                    name = 'Aid related'
+
+                ),
+                Bar(
+                    x=genre_names,
+                    y= aid_rel0,
+                    name = 'Aid not related'
+                )
+            ],
+
+            'layout': {
+                'title': 'Distribution of message by genre and \'aid related\' class ',
+                'yaxis': {
+                    'title': "Count"
+                },
+                'xaxis': {
+                    'title': "Genre"
+                },
+                'barmode' : 'group'
+            }
         }
+    
     ]
     
     # encode plotly graphs in JSON
