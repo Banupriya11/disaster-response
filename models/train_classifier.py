@@ -1,54 +1,47 @@
 import sys
+import re
+import pickle
+from sqlalchemy import create_engine
 import pandas as pd
 import nltk
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem.porter import PorterStemmer
-from sklearn.multioutput import MultiOutputClassifier
 from nltk.stem.wordnet import WordNetLemmatizer
-import re
-import os
-import sqlite3
-from sqlalchemy import create_engine
-from sklearn.pipeline import Pipeline,FeatureUnion
-from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier,AdaBoostClassifier
-from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
+from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
-from sklearn.base import BaseEstimator,TransformerMixin
+from sklearn.multioutput import MultiOutputClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report, make_scorer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 
+nltk.download(['punkt', 'wordnet', 'stopwords'], quiet=True)
 
 def load_data(database_filepath):
     """
-    Loads Data from the Database Function
+    Load data from SQLite file and returns X, Y as DataFrames 
     
-    Arguments:
-        database_filepath -> Path to SQLite destination database
-    Output:
-        X -> a dataframe containing features
-        Y -> a dataframe containing labels
     """
     
-#     engine = create_engine('sqlite:///' + database_filepath)
-#     df = pd.read_sql_table('Message', engine)
     engine = create_engine('sqlite:///Disaster.db')
-    df = pd.read_sql_table('Message', engine)  
+    df = pd.read_sql_table('Message', engine)
     X = df ['message']
-    y = df.iloc[:,4:]
-    return X,y
+    Y = df.iloc[:,4:]
+    Y = Y.astype(bool)
+    return X, Y
+
+
 
 def tokenize(text):
     """
-     Tokenization function. Receives raw text as input which further gets normalized, stop words removed, stemmed and              lemmatized.
-
-    Returns tokenized text
-   """        
-    text = re.sub( r"[^a-zA-Z0-9]", " ", text.lower())
+    Tokenization function. Receives raw text as input which further gets normalized, then stop words get removed, stemmed and lemmatized.
+    Returns tokenized text.
+    
+    """
+    
+    text = re.sub(r"[^a-zA-Z0-9]", " ", text.lower())
     words = word_tokenize(text)
     stemmed_words = [PorterStemmer().stem(w) for w in words]
     stop_words = stopwords.words("english")
@@ -57,64 +50,41 @@ def tokenize(text):
     return lemmed_words
 
 
-# Build a custom transformer which will extract the starting verb of a sentence
-class StartingVerbExtractor(BaseEstimator, TransformerMixin):
-    def starting_verb(self, text):
-        sentence_list = nltk.sent_tokenize(text)
-        for sentence in sentence_list:
-            pos_tags = nltk.pos_tag(tokenize(sentence))
-            first_word, first_tag = pos_tags[0]
-            if first_tag in ['VB', 'VBP'] or first_word == 'RT':
-                return True
-        return False
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, X):
-        X_tagged = pd.Series(X).apply(self.starting_verb)
-        return pd.DataFrame(X_tagged)
-
-
 def build_model():
     """
-    
     Return a CrossValidation model containing the Pipeline that does text preprocessing
-    
     """
     
     pipeline = Pipeline([
-    ('features',FeatureUnion([
-        ('text_pipeline',Pipeline([
-            ('vect',CountVectorizer(tokenizer=tokenize)),
-            ('tfidf',TfidfTransformer())
-        ])),
-        ('starting_verb',StartingVerbExtractor())
-    ])),
-    ('clf',MultiOutputClassifier(AdaBoostClassifier()))
-])
-     
-    parameters ={'classifier__estimator__learning_rate': [0.01, 0.02, 0.05],
-              'classifier__estimator__n_estimators': [10, 20, 40]
-               }
-    
-    cv = GridSearchCV(pipeline, parameters, verbose=True, n_jobs=-1)
+        ('count', CountVectorizer(tokenizer=tokenize)),
+        ('tfidf', TfidfTransformer()),
+        ('clf', RandomForestClassifier(n_estimators=15, max_depth=4, n_jobs=-1))
+    ])
+    parameters = {
+        'count__ngram_range': [(1,1), (1, 3)],
+        'clf__n_estimators': [5, 8],
+        'clf__max_depth': [2, 5]
+    }
+    cv = GridSearchCV(pipeline, parameters, verbose=True, cv=2, n_jobs=-1)
     return cv
 
 
 def evaluate_model(model, X_test, Y_test):
-    """Print classification report containing precesision, recall and f1
-    scores for each outoput column"""
-    y_pred = pipeline.predict(X_test)
-    for i, col in enumerate(y_test.columns.values):
+    """
+    Print classification report which includes precesision, recall and f1
+    scores for each outoput column
+    """
+    
+    Y_pred = model.predict(X_test)
+    for i, col in enumerate(Y_test.columns.values):
         
-#         print(i,col)      
-        print(classification_report(Y_test.loc[:,col], y_pred[:, i]))
+        print('---{}---'.format(col.upper()))
+        print(classification_report(Y_test.loc[:,col], Y_pred[:, i]))
 
 
 def save_model(model, model_filepath):
     """
-    Saving model with its best parameters using pickle
+    Save the model object as a pickle file
     """
     
     with open(model_filepath, 'wb') as model_file:
@@ -122,6 +92,10 @@ def save_model(model, model_filepath):
 
 
 def main():
+    """
+    Read the command line arguments and execute model training steps
+    """
+    
     if len(sys.argv) == 3:
         database_filepath, model_filepath = sys.argv[1:]
         print('Loading data...\n    DATABASE: {}'.format(database_filepath))
